@@ -1,0 +1,24 @@
+.bap-banner{box-sizing:border-box;clear:both;margin:var(--bap-margin,24px) 0;text-align:center;contain:layout style}
+.bap-banner[hidden]{display:none!important}
+.bap-banner *{box-sizing:border-box}
+.bap-inner{width:100%;max-width:var(--bap-width,970px);padding:var(--bap-padding,0);margin-inline:auto}
+.bap-inner.bap-stretch{max-width:100%}
+.bap-align-left .bap-inner{margin-left:0;margin-right:auto}
+.bap-align-right .bap-inner{margin-left:auto;margin-right:0}
+.bap-label{display:block;font:11px/1.6 system-ui,sans-serif;letter-spacing:.06em;color:#62666d;margin-bottom:5px;text-transform:uppercase}
+.bap-banner a,.bap-banner picture{display:block;width:100%}
+.bap-banner a:focus-visible,.bap-close:focus-visible{outline:3px solid #155eef;outline-offset:3px}
+.bap-banner img{display:block!important;width:100%!important;height:auto!important;aspect-ratio:var(--bap-ratio);object-fit:contain;border:0!important;border-radius:0!important;margin:0!important}
+.bap-sticky{display:none}
+#bap-sticky-space{height:var(--bap-sticky-space,0px)}
+@media(min-width:768px){.bap-no-desktop{display:none!important}#bap-sticky-space{display:none}}
+@media(max-width:767px){
+ .bap-no-mobile{display:none!important}
+ .bap-inner{max-width:var(--bap-mobile-width,320px)}
+ .bap-banner img{aspect-ratio:var(--bap-mobile-ratio)}
+ .bap-sticky{display:block;position:fixed;inset:auto 0 calc(var(--bap-offset,0px) + env(safe-area-inset-bottom,0px));z-index:900;margin:0;padding:8px 36px 8px;background:#fff;border-top:1px solid #e3e5e8;box-shadow:0 -3px 16px #0000000d}
+ .bap-sticky .bap-inner{width:fit-content;max-width:100%;padding:0;margin:auto}
+ .bap-sticky img{width:auto!important;max-width:100%!important;height:auto!important;max-height:min(100px,15vh)!important;aspect-ratio:auto}
+ .bap-sticky .bap-label{font-size:10px;margin-bottom:2px}
+ .bap-close{position:absolute;right:2px;top:2px;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;display:grid;place-items:center;background:#fff;color:#202530;border:1px solid #d7dce2;border-radius:50%;font:24px/1 system-ui;cursor:pointer}
+}

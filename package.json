@@ -1,0 +1,12 @@
+{
+  "name": "banner-studio-dev",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:browser": "node tests/browser.cjs",
+    "check:js": "node --check assets/admin.js && node --check assets/frontend.js && node --check assets/block.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
