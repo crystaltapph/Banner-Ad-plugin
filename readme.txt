@@ -4,7 +4,7 @@ Tags: banner, advertising, responsive, sticky, images
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Responsive self-managed image banners with a modern WordPress dashboard.
 
 == Description ==
 
-Upload your own banner images, select desktop/mobile artwork, and choose automatic article placement or manual shortcodes/blocks. Includes targeting, schedules, page limits, and an optional dismissible mobile bottom banner. No advertising platform or tracking service is required.
+Upload up to four creatives per campaign, assign individual links and desktop/mobile artwork, enable random selection per visit, and choose automatic article placement or manual shortcodes/blocks. Includes targeting, schedules, page limits, and an optional dismissible mobile bottom banner. No advertising platform or tracking service is required.
 
 JPEG, PNG, WebP, and supported AVIF images only. PHP DOM is required for paragraph/heading insertion. Clear page caches after changes and at scheduled start times. See README.md for complete placement, caching, and sticky-overlay integration instructions.
 
@@ -35,6 +35,9 @@ Use the Banner Studio block or [banner_studio id="123"]. Targeting, schedule, de
 No. Uploaded images are always retained. Banner records and settings are also retained unless deletion is explicitly enabled in Settings.
 
 == Changelog ==
+
+= 1.1.0 =
+Up to four creatives with individual links, device artwork, per-creative previews, and cache-safe random selection on posts/pages. Existing single-banner records remain compatible.
 
 = 1.0.0 =
 Initial release: custom administration, image banners, responsive artwork, automatic/manual placements, targeting, schedules, and mobile sticky banners.

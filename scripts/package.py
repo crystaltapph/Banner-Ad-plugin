@@ -4,7 +4,7 @@ from pathlib import Path
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
-output = root / 'dist' / 'banner-studio-1.0.0.zip'
+output = root / 'dist' / 'banner-studio-1.1.0.zip'
 files = [root / name for name in ('banner-ad-plugin.php', 'uninstall.php', 'readme.txt', 'README.md', 'LICENSE')]
 for directory in ('includes', 'assets'):
     files.extend(sorted(path for path in (root / directory).rglob('*') if path.is_file()))

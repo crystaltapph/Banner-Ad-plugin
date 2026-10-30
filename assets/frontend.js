@@ -8,6 +8,16 @@
     ids.add(banner.dataset.bapId);
   });
   const expired = banner => Number(banner.dataset.bapEnd) > 0 && Date.now() >= Number(banner.dataset.bapEnd) * 1000;
+  // Templates are inert: only the selected creative downloads. Selection runs
+  // in the browser so cached HTML still produces a fresh choice on each visit.
+  banners.filter(banner => banner.isConnected && !expired(banner)).forEach(banner => {
+    const choices = [...banner.querySelectorAll('template[data-bap-creative]')];
+    const mount = banner.querySelector('.bap-random-choice');
+    if (!choices.length || !mount) return;
+    const selected = Math.floor(Math.random() * choices.length);
+    mount.replaceChildren(choices[selected].content.cloneNode(true));
+    banner.dataset.bapSelected = choices[selected].dataset.bapCreative;
+  });
   const expire = () => banners.forEach(banner => { if (expired(banner)) banner.hidden = true; });
   expire();
   // Recheck cached end dates and tabs left open overnight.

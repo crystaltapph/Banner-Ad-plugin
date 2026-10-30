@@ -45,6 +45,7 @@ final class BAP_Plugin {
 
 	public static function banner_defaults(): array {
 		return array(
+			'creatives' => array(), 'randomize' => 0,
 			'desktop_image' => 0, 'mobile_image' => 0, 'url' => '', 'alt' => '', 'label' => 'Advertisement',
 			'desktop' => 1, 'mobile' => 1, 'new_tab' => 0, 'sponsored' => 1, 'enabled' => 1,
 			'placement' => 'after_paragraph', 'position' => 3, 'priority' => 10,
@@ -54,7 +55,42 @@ final class BAP_Plugin {
 	}
 
 	public static function data( int $id ): array {
-		return wp_parse_args( (array) get_post_meta( $id, '_bap_data', true ), self::banner_defaults() );
+		$d = wp_parse_args( (array) get_post_meta( $id, '_bap_data', true ), self::banner_defaults() );
+		if ( ! empty( $d['creatives'] ) ) {
+			$d = array_merge( $d, self::creatives( $d )[0] );
+		}
+		return $d;
+	}
+
+	/** Read old single-image records without requiring a database migration. */
+	public static function creatives( array $data ): array {
+		$defaults = array( 'desktop_image' => 0, 'mobile_image' => 0, 'url' => '', 'alt' => '' );
+		$items = ! empty( $data['creatives'] ) && is_array( $data['creatives'] ) ? $data['creatives'] : array( array_intersect_key( $data, $defaults ) );
+		return array_map( static fn( $item ) => wp_parse_args( (array) $item, $defaults ), array_values( array_slice( $items, 0, 4 ) ) );
+	}
+
+	private static function artwork( array $creative ): ?array {
+		$desktop = self::image( (int) $creative['desktop_image'] );
+		$mobile = self::image( (int) $creative['mobile_image'] ) ?: $desktop;
+		$desktop = $desktop ?: $mobile;
+		return $desktop && $mobile ? array( 'desktop' => $desktop, 'mobile' => $mobile ) : null;
+	}
+
+	private static function creative_markup( array $creative, array $d, array $art, bool $sticky ): string {
+		$desktop = $art['desktop']; $mobile = $art['mobile'];
+		$alt = $creative['alt'] ?: get_post_meta( (int) ( $creative['desktop_image'] ?: $creative['mobile_image'] ), '_wp_attachment_image_alt', true );
+		$blank = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+		ob_start();
+		?>
+		<?php if ( $creative['url'] ) : ?><a href="<?php echo esc_url( $creative['url'], array( 'http', 'https' ) ); ?>" <?php echo $d['new_tab'] ? 'target="_blank"' : ''; ?> rel="<?php echo esc_attr( trim( ( $d['sponsored'] ? 'sponsored ' : '' ) . ( $d['new_tab'] ? 'noopener' : '' ) ) ); ?>"><?php endif; ?>
+		<picture>
+			<source media="(max-width: 767px)" srcset="<?php echo $d['mobile'] ? esc_url( $mobile['url'] ) : esc_attr( $blank ); ?>" width="<?php echo (int) $mobile['width']; ?>" height="<?php echo (int) $mobile['height']; ?>">
+			<source media="(min-width: 768px)" srcset="<?php echo ( $d['desktop'] && ! $sticky ) ? esc_url( $desktop['url'] ) : esc_attr( $blank ); ?>" width="<?php echo (int) $desktop['width']; ?>" height="<?php echo (int) $desktop['height']; ?>">
+			<img src="<?php echo esc_url( $desktop['url'] ); ?>" width="<?php echo (int) $desktop['width']; ?>" height="<?php echo (int) $desktop['height']; ?>" alt="<?php echo esc_attr( $alt ); ?>" loading="lazy" decoding="async">
+		</picture>
+		<?php if ( $creative['url'] ) : ?></a><?php endif; ?>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	public static function banners(): array {
@@ -123,32 +159,44 @@ final class BAP_Plugin {
 		if ( isset( self::$seen[ $id ] ) || self::$count >= (int) self::settings()['max'] || ! self::eligible( $id, $d ) ) {
 			return '';
 		}
-		$desktop = self::image( (int) $d['desktop_image'] );
-		$mobile = self::image( (int) $d['mobile_image'] ) ?: $desktop;
-		$desktop = $desktop ?: $mobile;
-		if ( ! $desktop || ! $mobile || ( $sticky && ! $d['mobile'] ) ) {
+		$creatives = array();
+		foreach ( self::creatives( $d ) as $creative ) {
+			$art = self::artwork( $creative );
+			if ( $art ) { $creatives[] = array( 'data' => $creative, 'art' => $art ); }
+		}
+		if ( ! $creatives || ( $sticky && ! $d['mobile'] ) ) {
 			return '';
+		}
+		$random = $d['randomize'] && count( $creatives ) > 1;
+		$desktop = $creatives[0]['art']['desktop']; $mobile = $creatives[0]['art']['mobile'];
+		// Reserve the tallest creative's ratio on each device to avoid rotation-induced shifts.
+		if ( $random ) {
+			foreach ( $creatives as $creative ) {
+				foreach ( array( 'desktop', 'mobile' ) as $device ) {
+					$image = $creative['art'][ $device ];
+					if ( $image['width'] / max( 1, $image['height'] ) < ${$device}['width'] / max( 1, ${$device}['height'] ) ) { ${$device} = $image; }
+				}
+			}
 		}
 		self::$seen[ $id ] = true;
 		++self::$count;
 		$settings = self::settings();
-		$classes = 'bap-banner bap-align-' . $d['align'] . ( $sticky ? ' bap-sticky' : '' ) . ( ! $d['desktop'] ? ' bap-no-desktop' : '' ) . ( ! $d['mobile'] ? ' bap-no-mobile' : '' );
+		$classes = 'bap-banner bap-align-' . $d['align'] . ( $sticky ? ' bap-sticky' : '' ) . ( $random ? ' bap-random' : '' ) . ( ! $d['desktop'] ? ' bap-no-desktop' : '' ) . ( ! $d['mobile'] ? ' bap-no-mobile' : '' );
 		$style = sprintf( '--bap-width:%dpx;--bap-mobile-width:%dpx;--bap-margin:%dpx;--bap-padding:%dpx;--bap-ratio:%d/%d;--bap-mobile-ratio:%d/%d;--bap-offset:%dpx;', $d['width'], $d['mobile_width'], $d['margin'], $d['padding'], $desktop['width'], $desktop['height'], $mobile['width'], $mobile['height'], $settings['sticky_offset'] );
-		$alt = $d['alt'] ?: get_post_meta( (int) $d['desktop_image'], '_wp_attachment_image_alt', true );
-		$blank = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 		ob_start();
 		?>
 		<aside class="<?php echo esc_attr( $classes ); ?>" style="<?php echo esc_attr( $style ); ?>" aria-label="<?php echo esc_attr( $d['label'] ?: 'Advertisement' ); ?>" data-bap-id="<?php echo (int) $id; ?>" data-bap-end="<?php echo esc_attr( $d['end'] ); ?>" data-bap-dismiss="<?php echo (int) $settings['dismiss_hours']; ?>" <?php echo $sticky ? 'hidden' : ''; ?>>
 			<?php if ( $sticky ) : ?><button type="button" class="bap-close" aria-label="Dismiss advertisement">&times;</button><?php endif; ?>
 			<div class="bap-inner <?php echo $d['stretch'] ? 'bap-stretch' : ''; ?>">
 				<?php if ( $d['label'] ) : ?><span class="bap-label"><?php echo esc_html( $d['label'] ); ?></span><?php endif; ?>
-				<?php if ( $d['url'] ) : ?><a href="<?php echo esc_url( $d['url'], array( 'http', 'https' ) ); ?>" <?php echo $d['new_tab'] ? 'target="_blank"' : ''; ?> rel="<?php echo esc_attr( trim( ( $d['sponsored'] ? 'sponsored ' : '' ) . ( $d['new_tab'] ? 'noopener' : '' ) ) ); ?>"><?php endif; ?>
-				<picture>
-					<source media="(max-width: 767px)" srcset="<?php echo $d['mobile'] ? esc_url( $mobile['url'] ) : esc_attr( $blank ); ?>" width="<?php echo (int) $mobile['width']; ?>" height="<?php echo (int) $mobile['height']; ?>">
-					<source media="(min-width: 768px)" srcset="<?php echo ( $d['desktop'] && ! $sticky ) ? esc_url( $desktop['url'] ) : esc_attr( $blank ); ?>" width="<?php echo (int) $desktop['width']; ?>" height="<?php echo (int) $desktop['height']; ?>">
-					<img src="<?php echo esc_url( $desktop['url'] ); ?>" width="<?php echo (int) $desktop['width']; ?>" height="<?php echo (int) $desktop['height']; ?>" alt="<?php echo esc_attr( $alt ); ?>" loading="lazy" decoding="async">
-				</picture>
-				<?php if ( $d['url'] ) : ?></a><?php endif; ?>
+				<?php if ( $random ) : ?>
+					<div class="bap-random-frame"><div class="bap-random-choice"><noscript><?php echo self::creative_markup( $creatives[0]['data'], $d, $creatives[0]['art'], $sticky ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></noscript></div></div>
+					<?php foreach ( $creatives as $index => $creative ) : ?>
+						<template data-bap-creative="<?php echo (int) $index; ?>"><?php echo self::creative_markup( $creative['data'], $d, $creative['art'], $sticky ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
+					<?php endforeach; ?>
+				<?php else : ?>
+					<?php echo self::creative_markup( $creatives[0]['data'], $d, $creatives[0]['art'], $sticky ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<?php endif; ?>
 			</div>
 		</aside>
 		<?php

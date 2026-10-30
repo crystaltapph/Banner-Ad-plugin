@@ -7,16 +7,18 @@ A lightweight WordPress plugin for your own image banners. No ad platform, track
 Requires WordPress 6.5+ and PHP 8.1+. PHP DOM is required for paragraph/heading insertion; other placements work without it. Use a current, supported WordPress release in production.
 
 1. Build the installable ZIP with `python3 scripts/package.py`.
-2. In WordPress, open **Plugins → Add Plugin → Upload Plugin**, select `dist/banner-studio-1.0.0.zip`, and activate **Banner Studio**.
+2. In WordPress, open **Plugins → Add Plugin → Upload Plugin**, select `dist/banner-studio-1.1.0.zip`, and activate **Banner Studio**.
 3. Open **Banner Studio → Banners → Create banner**.
 4. Choose your artwork, add a link and alternative text, select placement and devices, preview, and save.
 5. Clear your page cache and review the published page on desktop and mobile.
 
 You can also copy the plugin's production files to `wp-content/plugins/banner-studio` and activate it. Node and Docker are development tools only; they are not needed on your website.
 
-## Included in version 1
+## Included in version 1.1
 
 - Dashboard, searchable/filterable banner library, placement guide, and settings.
+- Up to four creatives per campaign, each with its own link and desktop/mobile artwork.
+- Optional random selection on each post/page visit, including cached pages.
 - WordPress Media Library integration; separate desktop/mobile images with single-image fallback.
 - Before/after content and after a selected top-level paragraph or H2–H6 heading.
 - Shortcode: `[banner_studio id="123"]` and the **Banner Studio** Gutenberg block.
@@ -51,6 +53,18 @@ Automatic placement runs only in the main article on singular pages. Search resu
 Manual placement still obeys banner status, schedule, content targeting, exclusions, device visibility, deduplication, and the page cap. One banner is displayed at most once per server request; use separate banner records if you need identical artwork in separate places. Manual banners normally render before automatic placements because WordPress expands blocks/shortcodes earlier. Before/after placements are considered before in-content placements; the footer sticky slot uses any remaining page capacity. Lower priority numbers win within each processing stage; equal priorities use the older banner first.
 
 The default page cap is three banner records, including manual and sticky banners. The cap counts rendered records even when a record is hidden on the current viewport. Minimum spacing applies only between automatically inserted paragraph/heading banners. Boundary/manual placement spacing needs editorial review. Minimum word count applies only to automatic content placements. Word counting uses whitespace, so adjust or disable it for languages without whitespace-separated words.
+
+## Four creatives and random selection
+
+Edit a banner and use **Add creative** to add up to four creatives. Each creative contains one desktop image, one mobile image, one destination URL, and alternative text. This supports up to four desktop images and four mobile images per campaign. Each creative's link is shared by its desktop/mobile variants. If one device image is missing, the other is used. Shared placement, schedule, labels, dimensions, and new-tab/sponsored settings apply to the campaign.
+
+Enable **Randomly select a creative on each post/page visit** to display one uniformly selected creative from the pool. Select **Posts** and **Pages** under content types and leave category/tag filters and exclusions empty to include every eligible post/page. Automatic placement still requires a suitable paragraph/heading and the configured minimum article length; use before/after content placement and a zero minimum word count if you need coverage of short articles too.
+
+Selection happens once per banner per page load. It does not animate or periodically swap images, does not remember the last selection, and can repeat the same creative on consecutive visits. Resizing changes only the selected creative's device artwork, keeping its link matched. With random selection off, only the first saved creative is used. With one creative, the campaign behaves as a single banner regardless of the random setting.
+
+Random selection runs in the browser, so full-page caching does not freeze a server-selected banner for every visitor. All alternatives are embedded in inert HTML templates; only the selected artwork downloads. No tracking request, API call, or visitor identifier is added. Without JavaScript, the first creative is shown as a linked fallback. Space is reserved for the tallest creative on each device; use consistent aspect ratios to avoid excess empty space around shorter artwork. Excluded or expired campaigns do not bypass the normal display rules.
+
+Existing version 1.0 banner records remain readable without migration. Their images and links appear as Creative 1 when editing. Saving upgrades only that record to the multi-creative format. Clear page/CDN caches after upgrading so version 1.1 assets and markup reach visitors together.
 
 ## Mobile sticky behavior
 
@@ -101,7 +115,7 @@ The interface uses a teal/neutral palette, spacious cards, restrained type, stat
 | Placements | Six placement types, safe-placement rules, overlay integration |
 | Settings | Page caps, spacing, article length, sticky offset, dismissal, data removal |
 
-Banner records use a nonpublic `bap_banner` post type and one private metadata array per record. Global controls use the `bap_settings` option. Management requires `manage_options`; saves and deletes validate WordPress nonces. Links permit only HTTP(S), media must have an allowed raster MIME type, numeric settings are bounded, and output is escaped. Gutenberg uses WordPress's bundled editor libraries; frontend and custom admin behavior use native JavaScript.
+Banner campaigns use a nonpublic `bap_banner` post type and one private metadata array per record, containing up to four creative entries. Global controls use the `bap_settings` option. Management requires `manage_options`; saves and deletes validate WordPress nonces. Links permit only HTTP(S), media must have an allowed raster MIME type, numeric settings are bounded, and output is escaped. Gutenberg uses WordPress's bundled editor libraries; frontend and custom admin behavior use native JavaScript.
 
 ## Local development and tests
 
@@ -117,7 +131,7 @@ npm run check:js
 python3 scripts/package.py
 ```
 
-The browser test uses system Chromium by default. Override `CHROMIUM_PATH` with your Chromium executable, or install Playwright's matching browser and supply its path. The test-only login is `banner-tester` / `local-ui-test-only`. The setup script creates a disposable WordPress install and sample images/articles; **never run it against a production site**. Tests require CLI execution and are omitted from the installable ZIP. The browser suite deletes existing banner records in the disposable test site before creating its own fixtures.
+The browser test uses system Chromium by default. Override `CHROMIUM_PATH` with your Chromium executable, or install Playwright's matching browser and supply its path. The test-only login is `banner-tester` / `local-ui-test-only`. The setup script creates a disposable WordPress install and sample images/articles; **never run it against a production site**. Tests require CLI execution and are omitted from the installable ZIP. The browser suites test the standard workflow and four-creative random selection (including replayed cached HTML). The baseline browser suite deletes existing banner records in the disposable test site before creating its own fixtures.
 
 The local Compose site binds port 8080 to loopback only and uses explicit development-only DB credentials. Its named volumes retain data between restarts. `docker compose -p banner-studio-dev down` stops the services and retains data. Adding `--volumes` deletes this test site's database and uploads. Local bind-mount files must be readable by Apache; the checkout/directories need traverse permission and production files need read permission.
 
@@ -125,7 +139,7 @@ No localhost preview service is published by this project. Test evidence and scr
 
 ## Future phases
 
-1. **Current release:** Core uploaded-image workflow, clean administration, responsive and sticky placements, schedules/targeting, integration and browser tests.
+1. **Current release:** Core uploaded-image workflow, clean administration, four linked creatives per campaign, uniform random selection, responsive and sticky placements, schedules/targeting, integration and browser tests.
 2. **Campaign tools:** Weighted rotation, banner duplication, reusable presets, import/export, accessible category/tag pickers, and cache-vendor integrations.
 3. **Optional reporting:** Define a viewable impression (for example, 50% visible for one continuous second) separately from a rendered record. Count direct-banner link activations without redirect tracking. Document bot/ad-blocker limits, deduplication, caching, consent where applicable, retention, and data deletion before adding collection. Keep analytics opt-in and separate from the core display path.
 

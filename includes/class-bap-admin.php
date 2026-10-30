@@ -51,18 +51,31 @@ final class BAP_Admin {
 
 	public static function sanitize( array $raw ): array {
 		$d = BAP_Plugin::banner_defaults();
-		foreach ( array( 'desktop', 'mobile', 'new_tab', 'sponsored', 'enabled', 'stretch' ) as $key ) { $d[ $key ] = empty( $raw[ $key ] ) ? 0 : 1; }
-		foreach ( array( 'desktop_image', 'mobile_image' ) as $key ) {
-			$d[ $key ] = absint( $raw[ $key ] ?? 0 );
-			if ( $d[ $key ] && ! BAP_Plugin::image( $d[ $key ] ) ) { wp_die( 'Choose a JPEG, PNG, WebP, or AVIF image from the Media Library.', '', array( 'response' => 400 ) ); }
+		foreach ( array( 'desktop', 'mobile', 'new_tab', 'sponsored', 'enabled', 'stretch', 'randomize' ) as $key ) { $d[ $key ] = empty( $raw[ $key ] ) ? 0 : 1; }
+		$items = ! empty( $raw['creatives'] ) ? $raw['creatives'] : array( $raw );
+		if ( ! is_array( $items ) || count( $items ) > 4 ) { wp_die( 'Use at most four creatives per banner.', '', array( 'response' => 400 ) ); }
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) { wp_die( 'Invalid creative data.', '', array( 'response' => 400 ) ); }
+			$creative = array();
+			foreach ( array( 'desktop_image', 'mobile_image' ) as $key ) {
+				$creative[ $key ] = absint( $item[ $key ] ?? 0 );
+				if ( $creative[ $key ] && ! BAP_Plugin::image( $creative[ $key ] ) ) { wp_die( 'Choose a JPEG, PNG, WebP, or AVIF image from the Media Library.', '', array( 'response' => 400 ) ); }
+			}
+			$creative['alt'] = sanitize_text_field( $item['alt'] ?? '' );
+			$url = trim( $item['url'] ?? '' );
+			if ( ! $creative['desktop_image'] && ! $creative['mobile_image'] ) {
+				if ( $url || $creative['alt'] ) { wp_die( 'Each creative with a link or alternative text needs an image.', '', array( 'response' => 400 ) ); }
+				continue; // Unused editor slots are not saved.
+			}
+			if ( $url && ! preg_match( '#^https?://#i', $url ) ) { wp_die( 'Destination links must start with https:// or http://.', '', array( 'response' => 400 ) ); }
+			$creative['url'] = esc_url_raw( $url, array( 'https', 'http' ) );
+			if ( $url && ( ! $creative['url'] || ! wp_parse_url( $creative['url'], PHP_URL_HOST ) ) ) { wp_die( 'Enter a valid destination URL.', '', array( 'response' => 400 ) ); }
+			if ( $creative['url'] && ! $creative['alt'] ) { wp_die( 'Add alternative text describing each linked creative.', '', array( 'response' => 400 ) ); }
+			$d['creatives'][] = $creative;
 		}
-		if ( ! $d['desktop_image'] && ! $d['mobile_image'] ) { wp_die( 'Choose at least one banner image. Go back to keep editing.', '', array( 'response' => 400 ) ); }
-		foreach ( array( 'alt', 'label' ) as $key ) { $d[ $key ] = sanitize_text_field( $raw[ $key ] ?? '' ); }
-		$url = trim( $raw['url'] ?? '' );
-		if ( $url && ! preg_match( '#^https?://#i', $url ) ) { wp_die( 'Destination links must start with https:// or http://.', '', array( 'response' => 400 ) ); }
-		$d['url'] = esc_url_raw( $url, array( 'https', 'http' ) );
-		if ( $url && ( ! $d['url'] || ! wp_parse_url( $d['url'], PHP_URL_HOST ) ) ) { wp_die( 'Enter a valid destination URL.', '', array( 'response' => 400 ) ); }
-		if ( $d['url'] && ! $d['alt'] ) { wp_die( 'Add alternative text describing the linked banner.', '', array( 'response' => 400 ) ); }
+		if ( ! $d['creatives'] ) { wp_die( 'Choose at least one banner image. Go back to keep editing.', '', array( 'response' => 400 ) ); }
+		$d = array_merge( $d, $d['creatives'][0] ); // Keep the primary artwork readable by older integrations.
+		$d['label'] = sanitize_text_field( $raw['label'] ?? '' );
 		foreach ( array( 'placement' => array( 'before', 'after', 'after_paragraph', 'after_heading', 'manual', 'sticky' ), 'align' => array( 'left', 'center', 'right' ) ) as $key => $allowed ) {
 			$d[ $key ] = in_array( $raw[ $key ] ?? '', $allowed, true ) ? $raw[ $key ] : $d[ $key ];
 		}
@@ -128,7 +141,7 @@ final class BAP_Admin {
 		$tabs = array( 'banner-studio' => 'Dashboard', 'bap-banners' => 'Banners', 'bap-placements' => 'Placements', 'bap-settings' => 'Settings' );
 		?>
 		<div class="wrap bap-app">
-			<header class="bap-header"><div><span class="bap-eyebrow">YOUR SPACE. YOUR MESSAGE.</span><h1>Banner Studio <span>1.0</span></h1><p>Beautiful banners. Thoughtful placements. Fully yours.</p></div><a class="button button-primary bap-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=new' ) ); ?>">+ Create banner</a></header>
+			<header class="bap-header"><div><span class="bap-eyebrow">YOUR SPACE. YOUR MESSAGE.</span><h1>Banner Studio <span><?php echo esc_html( BAP_VERSION ); ?></span></h1><p>Beautiful banners. Thoughtful placements. Fully yours.</p></div><a class="button button-primary bap-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=new' ) ); ?>">+ Create banner</a></header>
 			<nav class="bap-nav" aria-label="Banner Studio sections"><?php foreach ( $tabs as $slug => $label ) : ?><a class="<?php echo $page === $slug ? 'is-current' : ''; ?>" <?php echo $page === $slug ? 'aria-current="page"' : ''; ?> href="<?php echo esc_url( admin_url( 'admin.php?page=' . $slug ) ); ?>"><?php echo esc_html( $label ); ?></a><?php endforeach; ?></nav>
 			<?php
 			$notices = array( 'saved' => 'Banner saved. Clear your page cache to publish the change everywhere.', 'deleted' => 'Banner deleted. Clear your page cache to remove cached copies.', 'settings' => 'Settings saved. Clear your page cache to apply changes everywhere.' );
@@ -161,7 +174,7 @@ final class BAP_Admin {
 		<?php if ( ! BAP_Plugin::banners() ) : ?><div class="bap-empty"><span class="dashicons dashicons-format-image"></span><h3>A fresh canvas.</h3><p>Create your first banner to bring this space to life.</p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=new' ) ); ?>">Create banner</a></div><?php else : ?>
 		<div class="bap-table-scroll"><table class="widefat bap-table"><thead><tr><th>Banner</th><th>Status</th><th>Placement / devices</th><th>Schedule</th><th>Actions</th></tr></thead><tbody>
 		<?php foreach ( BAP_Plugin::banners() as $post ) : $d = BAP_Plugin::data( $post->ID ); $status = self::status( $d ); ?>
-		<tr data-bap-row data-name="<?php echo esc_attr( strtolower( $post->post_title ) ); ?>" data-status="<?php echo esc_attr( $status ); ?>"><td><div class="bap-banner-name"><?php echo wp_get_attachment_image( $d['desktop_image'] ?: $d['mobile_image'], array( 96, 48 ) ); ?><div><a href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=' . $post->ID ) ); ?>"><b><?php echo esc_html( $post->post_title ); ?></b></a><code>[banner_studio id="<?php echo (int) $post->ID; ?>"]</code></div></div></td><td><span class="bap-badge bap-<?php echo esc_attr( strtolower( $status ) ); ?>"><?php echo esc_html( $status ); ?></span></td><td><?php echo esc_html( self::placement_labels()[ $d['placement'] ] ); ?><small><?php echo esc_html( implode( ' + ', array_filter( array( $d['desktop'] ? 'Desktop' : '', $d['mobile'] ? 'Mobile' : '' ) ) ) ?: 'No devices' ); ?></small></td><td><small><?php echo $d['start'] ? esc_html( wp_date( 'M j, Y H:i', (int) $d['start'] ) ) : 'Starts immediately'; ?><br><?php echo $d['end'] ? 'Until ' . esc_html( wp_date( 'M j, Y H:i', (int) $d['end'] ) ) : 'No end date'; ?></small></td><td><a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=' . $post->ID ) ); ?>">Edit</a><form class="bap-delete" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'bap_delete_' . $post->ID ); ?><input type="hidden" name="action" value="bap_delete"><input type="hidden" name="banner_id" value="<?php echo (int) $post->ID; ?>"><button type="submit" class="button-link-delete">Delete</button></form></td></tr>
+		<tr data-bap-row data-name="<?php echo esc_attr( strtolower( $post->post_title ) ); ?>" data-status="<?php echo esc_attr( $status ); ?>"><td><div class="bap-banner-name"><?php echo wp_get_attachment_image( $d['desktop_image'] ?: $d['mobile_image'], array( 96, 48 ) ); ?><div><a href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=' . $post->ID ) ); ?>"><b><?php echo esc_html( $post->post_title ); ?></b></a><small><?php echo count( BAP_Plugin::creatives( $d ) ); ?> creative(s) · <?php echo $d['randomize'] ? 'Random per visit' : 'First creative'; ?></small><code>[banner_studio id="<?php echo (int) $post->ID; ?>"]</code></div></div></td><td><span class="bap-badge bap-<?php echo esc_attr( strtolower( $status ) ); ?>"><?php echo esc_html( $status ); ?></span></td><td><?php echo esc_html( self::placement_labels()[ $d['placement'] ] ); ?><small><?php echo esc_html( implode( ' + ', array_filter( array( $d['desktop'] ? 'Desktop' : '', $d['mobile'] ? 'Mobile' : '' ) ) ) ?: 'No devices' ); ?></small></td><td><small><?php echo $d['start'] ? esc_html( wp_date( 'M j, Y H:i', (int) $d['start'] ) ) : 'Starts immediately'; ?><br><?php echo $d['end'] ? 'Until ' . esc_html( wp_date( 'M j, Y H:i', (int) $d['end'] ) ) : 'No end date'; ?></small></td><td><a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners&edit=' . $post->ID ) ); ?>">Edit</a><form class="bap-delete" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'bap_delete_' . $post->ID ); ?><input type="hidden" name="action" value="bap_delete"><input type="hidden" name="banner_id" value="<?php echo (int) $post->ID; ?>"><button type="submit" class="button-link-delete">Delete</button></form></td></tr>
 		<?php endforeach; ?>
 		</tbody></table></div><p id="bap-no-results" hidden>No banners match your filters.</p><?php endif; ?></section>
 		<?php
@@ -172,18 +185,44 @@ final class BAP_Admin {
 	}
 
 	private static function field( string $key, string $label, $value, string $type = 'text', string $help = '', array $attrs = array() ): void {
-		$prefix = $attrs['prefix'] ?? 'banner'; unset( $attrs['prefix'] );
+		$prefix = $attrs['prefix'] ?? 'banner';
+		$field_id = $attrs['field_id'] ?? $key;
+		unset( $attrs['prefix'], $attrs['field_id'] );
 		?>
 		<div class="bap-field">
-			<label for="bap-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label>
-			<input id="bap-<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $prefix . '[' . $key . ']' ); ?>" type="<?php echo esc_attr( $type ); ?>" value="<?php echo esc_attr( $value ); ?>" <?php if ( $help ) { echo 'aria-describedby="bap-help-' . esc_attr( $key ) . '" '; } ?><?php foreach ( $attrs as $name => $attr ) { echo esc_attr( $name ) . '="' . esc_attr( $attr ) . '" '; } ?>>
-			<?php if ( $help ) : ?><small id="bap-help-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $help ); ?></small><?php endif; ?>
+			<label for="bap-<?php echo esc_attr( $field_id ); ?>"><?php echo esc_html( $label ); ?></label>
+			<input id="bap-<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $prefix . '[' . $key . ']' ); ?>" type="<?php echo esc_attr( $type ); ?>" value="<?php echo esc_attr( $value ); ?>" <?php if ( $help ) { echo 'aria-describedby="bap-help-' . esc_attr( $field_id ) . '" '; } ?><?php foreach ( $attrs as $name => $attr ) { echo esc_attr( $name ) . '="' . esc_attr( $attr ) . '" '; } ?>>
+			<?php if ( $help ) : ?><small id="bap-help-<?php echo esc_attr( $field_id ); ?>"><?php echo esc_html( $help ); ?></small><?php endif; ?>
 		</div>
 		<?php
 	}
 
 	private static function toggle( string $key, string $label, $value, string $prefix = 'banner' ): void {
 		echo '<label class="bap-check"><input type="checkbox" name="' . esc_attr( $prefix . '[' . $key . ']' ) . '" value="1" ' . checked( $value, 1, false ) . '> <span>' . esc_html( $label ) . '</span></label>';
+	}
+
+	private static function creative_editor( int $index, array $creative, bool $hidden ): void {
+		$c = wp_parse_args( $creative, array( 'desktop_image' => 0, 'mobile_image' => 0, 'url' => '', 'alt' => '' ) );
+		$prefix = 'banner[creatives][' . $index . ']';
+		?>
+		<section class="bap-creative-editor" data-creative-index="<?php echo (int) $index; ?>" <?php echo $hidden ? 'hidden' : ''; ?>>
+			<div class="bap-section-head"><h4>Creative <?php echo (int) $index + 1; ?></h4><button type="button" class="button-link-delete bap-remove-creative">Remove creative</button></div>
+			<div class="bap-grid">
+			<?php foreach ( array( 'desktop_image' => 'Desktop artwork', 'mobile_image' => 'Mobile artwork' ) as $key => $label ) :
+				$image = BAP_Plugin::image( (int) $c[ $key ] );
+				$field = $index ? 'c' . $index . '-' . $key : $key;
+			?>
+				<div class="bap-media"><span><?php echo esc_html( $label ); ?></span><div class="bap-media-preview"><?php if ( $image ) : ?><img src="<?php echo esc_url( $image['url'] ); ?>" alt=""><?php else : ?><span>No image selected</span><?php endif; ?></div><input id="bap-<?php echo esc_attr( $field ); ?>" type="hidden" name="<?php echo esc_attr( $prefix . '[' . $key . ']' ); ?>" data-creative-field="<?php echo esc_attr( $key ); ?>" value="<?php echo (int) $c[ $key ]; ?>"><button class="button bap-select-image" type="button" data-field="<?php echo esc_attr( $field ); ?>">Choose image</button> <button class="button-link bap-remove-image" type="button" data-field="<?php echo esc_attr( $field ); ?>">Remove</button></div>
+			<?php endforeach; ?>
+			</div>
+			<p class="bap-muted">JPEG, PNG, WebP, or AVIF. Aim for under 200 KB. Missing device artwork falls back to the other image.</p>
+			<?php
+			foreach ( array( 'alt' => 'Alternative text', 'url' => 'Destination URL' ) as $key => $label ) {
+				self::field( $key, $label, $c[ $key ], 'url' === $key ? 'url' : 'text', 'url' === $key ? 'Optional. This link belongs only to this creative.' : 'Describe this creative. Required when linked.', array( 'prefix' => $prefix, 'field_id' => $index ? 'c' . $index . '-' . $key : $key, 'data-creative-field' => $key ) );
+			}
+			?>
+		</section>
+		<?php
 	}
 
 	private static function editor(): void {
@@ -196,11 +235,14 @@ final class BAP_Admin {
 		<div class="bap-section-head"><div><h2><?php echo $id ? 'Edit banner' : 'Create banner'; ?></h2><p>Make something worth noticing.</p></div><button class="button button-primary bap-primary" type="submit">Save banner</button></div>
 		<div class="bap-editor-grid"><div class="bap-editor-fields">
 		<section class="bap-card"><h3>01 · Creative</h3><label class="bap-field" for="bap-title"><span>Banner name</span><input id="bap-title" name="title" required maxlength="200" value="<?php echo esc_attr( $id ? get_the_title( $id ) : '' ); ?>" placeholder="e.g. Summer collection"></label>
-		<div class="bap-grid">
-		<?php foreach ( array( 'desktop_image' => 'Desktop artwork', 'mobile_image' => 'Mobile artwork' ) as $key => $label ) : $image = BAP_Plugin::image( (int) $d[ $key ] ); ?>
-		<div class="bap-media"><span><?php echo esc_html( $label ); ?></span><div class="bap-media-preview"><?php if ( $image ) : ?><img src="<?php echo esc_url( $image['url'] ); ?>" alt=""><?php else : ?><span>No image selected</span><?php endif; ?></div><input id="bap-<?php echo esc_attr( $key ); ?>" type="hidden" name="banner[<?php echo esc_attr( $key ); ?>]" value="<?php echo (int) $d[ $key ]; ?>"><button class="button bap-select-image" type="button" data-field="<?php echo esc_attr( $key ); ?>">Choose image</button> <button class="button-link bap-remove-image" type="button" data-field="<?php echo esc_attr( $key ); ?>">Remove</button></div>
-		<?php endforeach; ?></div><p class="bap-muted">JPEG, PNG, WebP, or AVIF. Aim for under 200 KB. If one image is missing, the other is used on both devices.</p>
-		<?php self::field( 'alt', 'Alternative text', $d['alt'], 'text', 'Describe the message or destination. Required when the banner is linked.' ); self::field( 'url', 'Destination URL', $d['url'], 'url', 'Optional. Use a full https:// or http:// address.', array( 'placeholder' => 'https://example.com/offer' ) ); ?>
+		<p>Add up to four creatives, each with its own destination link and desktop/mobile artwork.</p>
+		<?php $creatives = BAP_Plugin::creatives( $d ); ?>
+		<div id="bap-creatives">
+		<?php for ( $index = 0; $index < 4; ++$index ) { self::creative_editor( $index, $creatives[ $index ] ?? array(), $index >= count( $creatives ) ); } ?>
+		</div>
+		<div class="bap-section-head"><button id="bap-add-creative" type="button" class="button">+ Add creative</button><span id="bap-creative-count" class="bap-badge" aria-live="polite"></span></div>
+		<?php self::toggle( 'randomize', 'Randomly select a creative on each post/page visit', $d['randomize'] ); ?>
+		<p class="bap-muted">One creative appears per placement. With random selection off, the first creative is used. Choose Posts and Pages below to appear on both; targeting and exclusions still apply. Random choices can repeat on consecutive visits.</p>
 		<div class="bap-inline"><?php self::toggle( 'new_tab', 'Open link in a new tab', $d['new_tab'] ); self::toggle( 'sponsored', 'Paid / sponsored link', $d['sponsored'] ); ?></div></section>
 		<section class="bap-card"><h3>02 · Placement & audience</h3><div class="bap-field"><label for="bap-placement">Placement</label><select id="bap-placement" name="banner[placement]"><?php foreach ( self::placement_labels() as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $key, $d['placement'], false ) . '>' . esc_html( $label ) . '</option>'; } ?></select></div>
 		<?php self::field( 'position', 'Paragraph / heading number', $d['position'], 'number', 'Counts top-level text paragraphs or H2–H6 headings. Nested layouts are left intact.', array( 'min' => 1, 'max' => 100 ) ); ?>
@@ -212,7 +254,7 @@ final class BAP_Admin {
 		<details><summary>Spacing & alignment</summary><div class="bap-detail-body"><div class="bap-field"><label for="bap-align">Alignment</label><select id="bap-align" name="banner[align]"><?php foreach ( array( 'left', 'center', 'right' ) as $align ) { echo '<option ' . selected( $align, $d['align'], false ) . '>' . esc_html( $align ) . '</option>'; } ?></select></div><div class="bap-grid"><?php self::field( 'margin', 'Vertical margin (px)', $d['margin'], 'number', '', array( 'min' => 0, 'max' => 120 ) ); self::field( 'padding', 'Inner padding (px)', $d['padding'], 'number', '', array( 'min' => 0, 'max' => 60 ) ); ?></div></div></details></section>
 		<section class="bap-card"><h3>04 · Publishing</h3><?php self::toggle( 'enabled', 'Enable this banner', $d['enabled'] ); ?><div class="bap-grid"><?php foreach ( array( 'start' => 'Start date', 'end' => 'End date' ) as $key => $label ) { self::field( $key, $label, $d[ $key ] ? wp_date( 'Y-m-d\TH:i', (int) $d[ $key ] ) : '', 'datetime-local' ); } ?></div><p class="bap-muted">Timezone: <?php echo esc_html( wp_timezone_string() ); ?>. Empty dates mean no restriction. Clear page caches after changes and at scheduled start times. Cached banners are hidden after expiry in the browser.</p><?php if ( $id ) : ?><p>Manual placement: <code>[banner_studio id="<?php echo (int) $id; ?>"]</code></p><?php endif; ?></section>
 		<div class="bap-section-head"><a href="<?php echo esc_url( admin_url( 'admin.php?page=bap-banners' ) ); ?>">Back to banners</a><button class="button button-primary bap-primary">Save banner</button></div>
-		</div><aside class="bap-preview-panel bap-card"><div class="bap-section-head"><h3>Live creative preview</h3><span class="bap-badge">Preview</span></div><div class="bap-preview-tabs" role="group" aria-label="Preview device"><button type="button" class="is-current" data-preview="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview="mobile" aria-pressed="false">Mobile</button></div><div id="bap-preview-device"><div class="bap-mock-heading"></div><div class="bap-mock-line"></div><div class="bap-mock-line short"></div><div id="bap-preview-banner"><span id="bap-preview-label">Advertisement</span><img id="bap-preview-image" alt="Banner preview" hidden><p id="bap-preview-empty">Your artwork will appear here.</p></div><div class="bap-mock-line"></div><div class="bap-mock-line"></div><div class="bap-mock-line short"></div></div><p id="bap-preview-description" class="bap-muted">Creative preview only. Test placement in your theme before publishing.</p><p id="bap-form-feedback" role="alert"></p></aside></div></form>
+		</div><aside class="bap-preview-panel bap-card"><div class="bap-section-head"><h3>Live creative preview</h3><span class="bap-badge">Preview</span></div><label class="bap-field" for="bap-preview-creative"><span>Preview creative</span><select id="bap-preview-creative"><?php for ( $i = 0; $i < 4; ++$i ) { echo '<option value="' . (int) $i . '">Creative ' . (int) ( $i + 1 ) . '</option>'; } ?></select></label><div class="bap-preview-tabs" role="group" aria-label="Preview device"><button type="button" class="is-current" data-preview="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview="mobile" aria-pressed="false">Mobile</button></div><div id="bap-preview-device"><div class="bap-mock-heading"></div><div class="bap-mock-line"></div><div class="bap-mock-line short"></div><div id="bap-preview-banner"><span id="bap-preview-label">Advertisement</span><img id="bap-preview-image" alt="Banner preview" hidden><p id="bap-preview-empty">Your artwork will appear here.</p></div><div class="bap-mock-line"></div><div class="bap-mock-line"></div><div class="bap-mock-line short"></div></div><p id="bap-preview-description" class="bap-muted">Creative preview only. Test placement in your theme before publishing.</p><p id="bap-form-feedback" role="alert"></p></aside></div></form>
 		<?php
 	}
 

@@ -36,6 +36,13 @@ function change( int $ad_id, array $overrides ): void {
 	update_post_meta( $ad_id, '_bap_data', array_merge( BAP_Plugin::data( $ad_id ), $overrides ) );
 	BAP_Plugin::reset_cache();
 }
+function rejects( callable $operation ): bool {
+	$handler = static fn() => static function () { throw new InvalidArgumentException( 'Validation rejected the input.' ); };
+	add_filter( 'wp_die_handler', $handler );
+	try { $operation(); return false; }
+	catch ( InvalidArgumentException $error ) { return true; }
+	finally { remove_filter( 'wp_die_handler', $handler ); }
+}
 try {
 	update_option( 'bap_settings', array_merge( BAP_Plugin::defaults(), array( 'min_words' => 0, 'max' => 10 ) ) );
 	context( $fixture['post'] );
@@ -106,6 +113,37 @@ try {
 	BAP_Plugin::reset_cache();
 	change( $ad_id, array( 'mobile_image' => 0 ) );
 	check( str_contains( BAP_Plugin::render( $ad_id ), 'banner-test-desktop.png' ), 'Missing mobile artwork falls back to desktop artwork' );
+	check( count( BAP_Plugin::creatives( BAP_Plugin::data( $ad_id ) ) ) === 1, 'Legacy single-banner records remain readable without migration' );
+	$raw['creatives'] = array();
+	for ( $i = 1; $i <= 4; ++$i ) {
+		$raw['creatives'][] = array( 'desktop_image' => $fixture[ 1 === $i ? 'desktop' : 'desktop' . $i ], 'mobile_image' => $fixture[ 1 === $i ? 'mobile' : 'mobile' . $i ], 'url' => 'https://example.test/creative-' . $i, 'alt' => 'Offer ' . $i );
+	}
+	$raw['randomize'] = 1;
+	$raw['exclude'] = array();
+	$raw['post_types'] = array( 'post', 'page' );
+	$clean = BAP_Admin::sanitize( $raw );
+	check( 4 === count( $clean['creatives'] ) && 1 === $clean['randomize'], 'Four desktop/mobile creatives and random mode are accepted' );
+	check( 'https://example.test/creative-4' === $clean['creatives'][3]['url'], 'Each creative retains its own destination link' );
+	$random_ad = banner( $clean );
+	$html = BAP_Plugin::render( $random_ad );
+	check( 4 === substr_count( $html, 'data-bap-creative=' ) && str_contains( $html, '<noscript>' ), 'Random rendering includes four inert choices and a no-JavaScript fallback' );
+	check( substr_count( $html, 'data-bap-id=' ) === 1, 'Four alternatives consume only one banner slot' );
+	context( $fixture['page'] );
+	check( '' !== BAP_Plugin::render( $random_ad ), 'Random campaign supports automatic display on pages as well as posts' );
+	context( $fixture['post'] );
+	change( $random_ad, array( 'randomize' => 0 ) );
+	$html = BAP_Plugin::render( $random_ad );
+	check( str_contains( $html, 'creative-1' ) && ! str_contains( $html, 'creative-4' ) && ! str_contains( $html, '<template' ), 'Disabling random mode serves only the first creative' );
+	$too_many = $raw; $too_many['creatives'][] = $raw['creatives'][0];
+	check( rejects( static fn() => BAP_Admin::sanitize( $too_many ) ), 'More than four creatives are rejected server-side' );
+	$unsafe = $raw; $unsafe['creatives'][3]['url'] = 'javascript:alert(1)';
+	check( rejects( static fn() => BAP_Admin::sanitize( $unsafe ) ), 'Unsafe links in later creatives are rejected server-side' );
+	$invalid = $raw; $invalid['creatives'][2]['desktop_image'] = $fixture['post'];
+	check( rejects( static fn() => BAP_Admin::sanitize( $invalid ) ), 'Non-image attachments in later creatives are rejected' );
+	$blank = $raw; $blank['creatives'][3] = array();
+	check( count( BAP_Admin::sanitize( $blank )['creatives'] ) === 3, 'Unused blank creative slots are omitted when saving' );
+	$partial = $blank; $partial['creatives'][3]['url'] = 'https://example.test/missing-image';
+	check( rejects( static fn() => BAP_Admin::sanitize( $partial ) ), 'A linked creative without artwork cannot be saved' );
 	echo "\n$checks integration checks passed.\n";
 } catch ( Throwable $error ) {
 	fwrite( STDERR, 'FAIL: ' . $error->getMessage() . "\n" );

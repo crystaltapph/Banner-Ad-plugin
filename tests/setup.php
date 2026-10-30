@@ -36,4 +36,22 @@ if ( ! $fixture ) {
 	$fixture['page'] = wp_insert_post( array( 'post_title' => 'A separate page', 'post_content' => $content, 'post_type' => 'page', 'post_status' => 'publish' ) );
 	update_option( 'bap_test_fixture', $fixture );
 }
+// Add distinct artwork so browser tests can detect accidental preload of alternatives.
+for ( $variant = 2; $variant <= 4; ++$variant ) {
+	foreach ( array( 'desktop' => array( 970, 250 ), 'mobile' => array( 320, 100 ) ) as $device => $size ) {
+		$key = $device . $variant;
+		if ( isset( $fixture[ $key ] ) ) { continue; }
+		$image = imagecreatetruecolor( $size[0], $size[1] );
+		$background = imagecolorallocate( $image, 20 * $variant, 50, 90 );
+		$foreground = imagecolorallocate( $image, 255, 255, 255 );
+		imagefill( $image, 0, 0, $background );
+		imagestring( $image, 5, 20, 30, strtoupper( $device ) . ' CREATIVE ' . $variant, $foreground );
+		ob_start(); imagepng( $image ); $bytes = ob_get_clean(); imagedestroy( $image );
+		$upload = wp_upload_bits( 'banner-test-' . $key . '.png', null, $bytes );
+		$attachment_id = wp_insert_attachment( array( 'post_title' => 'Test ' . $device . ' ' . $variant . ' artwork', 'post_mime_type' => 'image/png', 'post_status' => 'inherit' ), $upload['file'] );
+		wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
+		$fixture[ $key ] = $attachment_id;
+	}
+}
+update_option( 'bap_test_fixture', $fixture );
 echo wp_json_encode( $fixture ) . PHP_EOL;
